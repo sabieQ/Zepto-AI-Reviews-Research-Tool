@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+frontend/.env
+frontend/.env.local
+
+# Uploads & local data
+uploads/
+tmp/
+*.log
+docs/spikes/out/
+scripts/spikes/node_modules/
+scripts/spikes/_*.py
+scripts/spikes/_*.js
+scripts/spikes/_*.json
+scripts/spikes/_*.txt
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Alembic / coverage
+.coverage
+htmlcov/

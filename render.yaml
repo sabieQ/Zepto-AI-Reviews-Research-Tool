@@ -1,0 +1,32 @@
+# Render Blueprint — connect this GitHub repo, then fill secret env values in the dashboard.
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Docker services: migrations run via backend/docker-entrypoint.sh on each start.
+services:
+  - type: web
+    name: zepto-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_PROVIDER
+        value: openrouter
+      - key: AI_MODEL
+        value: openai/gpt-4o-mini
+      - key: EMBEDDING_MODEL
+        value: openai/text-embedding-3-small
+      - key: EMBEDDING_DIMENSIONS
+        value: "1536"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PROMPTS_DIR
+        value: /prompts

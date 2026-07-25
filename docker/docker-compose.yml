@@ -1,0 +1,29 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: zepto
+    ports:
+      - "5432:5432"
+    volumes:
+      - zepto_pgdata:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/zepto
+      FRONTEND_URL: http://localhost:3000
+      LOG_LEVEL: INFO
+      PROMPTS_DIR: /prompts
+      PORT: "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+volumes:
+  zepto_pgdata:

@@ -1,0 +1,7 @@
+{
+  "name": "zepto-app-store-collector",
+  "private": true,
+  "dependencies": {
+    "app-store-scraper": "^0.18.0"
+  }
+}

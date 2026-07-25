@@ -1,0 +1,25 @@
+# Used when Docker build context is the repo root
+.git
+.github
+.venv
+**/__pycache__
+**/*.py[cod]
+**/.env
+**/.env.*
+!**/.env.example
+backend/.venv
+backend/uploads
+backend/tmp
+backend/.pytest_cache
+frontend/node_modules
+frontend/.next
+frontend/.env*
+docs/spikes/out
+scripts/spikes/node_modules
+**/node_modules
+!backend/app/services/collectors/js/package.json
+!backend/app/services/collectors/js/package-lock.json
+*.log
+.idea
+.vscode
+.DS_Store

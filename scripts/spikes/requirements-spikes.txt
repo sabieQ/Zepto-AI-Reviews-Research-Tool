@@ -1,0 +1,4 @@
+# Spike-only deps (do NOT add to production backend requirements until 7b approved)
+google-play-scraper>=1.2.7,<2
+# App Store: use Node app-store-scraper via fetch_app_store_reviews.js
+# (Python app-store-scraper is broken against Apple endpoints as of 2026)
