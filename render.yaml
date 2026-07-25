@@ -30,3 +30,5 @@ services:
         value: INFO
       - key: PROMPTS_DIR
         value: /prompts
+      - key: EMBEDDING_PROVIDER
+        value: local

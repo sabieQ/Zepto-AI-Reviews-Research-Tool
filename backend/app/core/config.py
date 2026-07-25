@@ -25,6 +25,12 @@ class Settings(BaseSettings):
         alias="EMBEDDING_MODEL",
     )
     embedding_dimensions: int = Field(default=1536, alias="EMBEDDING_DIMENSIONS")
+    # remote = OpenRouter/OpenAI/etc (costs); local = free ONNX model on the machine
+    embedding_provider: str = Field(default="remote", alias="EMBEDDING_PROVIDER")
+    local_embedding_model: str = Field(
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        alias="LOCAL_EMBEDDING_MODEL",
+    )
 
     collector_play_app_id: str = Field(
         default="com.zeptoconsumerapp",

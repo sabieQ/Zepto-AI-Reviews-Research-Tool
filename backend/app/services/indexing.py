@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.constants import DatasetStatus, MAX_TOP_K
 from app.models import Conversation, ConversationChunk, Dataset
-from app.services.ai_provider import AIProviderError, embed
+from app.services.ai_provider import AIProviderError, embed, embedding_uses_remote_api
 from app.services.chunking import chunk_text
 from app.services.logging_service import write_log
 from app.services.settings_service import clear_reindex_required_flag, get_effective_settings
@@ -53,7 +53,6 @@ def ensure_vector_index(db: Session) -> None:
             db.commit()
         except Exception:  # noqa: BLE001
             db.rollback()
-            # Index is optional for small MVP volumes
             write_log(
                 db,
                 level="warn",
@@ -64,7 +63,13 @@ def ensure_vector_index(db: Session) -> None:
             db.commit()
 
 
-def index_dataset(db: Session, dataset: Dataset) -> Dataset:
+def index_dataset(
+    db: Session,
+    dataset: Dataset,
+    *,
+    conversation_limit: int | None = None,
+    progress_every: int = 500,
+) -> Dataset:
     if dataset.conversation_count <= 0:
         raise IndexingError(
             "No conversations to index",
@@ -89,11 +94,12 @@ def index_dataset(db: Session, dataset: Dataset) -> Dataset:
         )
 
     settings = get_settings()
-    if not settings.ai_api_key.strip():
+    if embedding_uses_remote_api() and not settings.ai_api_key.strip():
         dataset.status = DatasetStatus.FAILED
         dataset.error_message = (
             "AI_API_KEY is missing. Add your OpenRouter API key to backend/.env "
-            "(https://openrouter.ai/keys), then click Index."
+            "(https://openrouter.ai/keys), then click Index — or set "
+            "EMBEDDING_PROVIDER=local for free on-device embeddings."
         )
         write_log(
             db,
@@ -112,58 +118,95 @@ def index_dataset(db: Session, dataset: Dataset) -> Dataset:
         level="info",
         event="index_start",
         message="Indexing started",
-        context={"dataset_id": str(dataset.id)},
+        context={
+            "dataset_id": str(dataset.id),
+            "conversation_limit": conversation_limit,
+            "embedding_provider": settings.embedding_provider,
+        },
     )
     db.commit()
 
     try:
-        # Rebuild chunks for this dataset
         db.execute(delete(ConversationChunk).where(ConversationChunk.dataset_id == dataset.id))
         db.flush()
 
-        conversations = list(
-            db.scalars(
-                select(Conversation).where(Conversation.dataset_id == dataset.id)
-            ).all()
+        q = (
+            select(Conversation)
+            .where(Conversation.dataset_id == dataset.id)
+            .order_by(Conversation.created_at.desc())
         )
+        if conversation_limit is not None and conversation_limit > 0:
+            q = q.limit(int(conversation_limit))
+        conversations = list(db.scalars(q).all())
         if not conversations:
             raise IndexingError("No conversations to index")
 
+        effective = get_effective_settings(db)
+        embed_dims = int(
+            effective.get("embedding_dimensions") or get_settings().embedding_dimensions
+        )
+        embed_model = str(effective.get("embedding_model") or "")
+        embed_provider = str(effective.get("ai_provider") or "")
+        batch_size = 64 if not embedding_uses_remote_api() else 32
+
+        total_chunks = 0
         pending_rows: list[tuple[Conversation, int, str]] = []
-        for conv in conversations:
+
+        def flush_pending() -> None:
+            nonlocal total_chunks, pending_rows
+            if not pending_rows:
+                return
+            texts = [p[2] for p in pending_rows]
+            vectors = embed(
+                texts,
+                model=embed_model,
+                dimensions=embed_dims,
+                provider=embed_provider,
+                batch_size=batch_size,
+            )
+            if len(vectors) != len(pending_rows):
+                raise IndexingError("Embedding provider returned incomplete results")
+            for (conv, idx, piece), vector in zip(pending_rows, vectors, strict=True):
+                db.add(
+                    ConversationChunk(
+                        id=uuid.uuid4(),
+                        conversation_id=conv.id,
+                        dataset_id=dataset.id,
+                        chunk_index=idx,
+                        content=piece,
+                        token_count=len(piece.split()),
+                        embedding=vector,
+                    )
+                )
+            total_chunks += len(pending_rows)
+            pending_rows = []
+            db.flush()
+
+        for i, conv in enumerate(conversations, start=1):
             pieces = chunk_text(conv.content)
             for idx, piece in enumerate(pieces):
                 pending_rows.append((conv, idx, piece))
+            if len(pending_rows) >= 400:
+                flush_pending()
+            if progress_every and i % progress_every == 0:
+                write_log(
+                    db,
+                    level="info",
+                    event="index_progress",
+                    message=f"Indexed {i}/{len(conversations)} conversations",
+                    context={
+                        "dataset_id": str(dataset.id),
+                        "conversations_done": i,
+                        "conversations_total": len(conversations),
+                        "chunks": total_chunks,
+                    },
+                )
+                db.commit()
 
-        if not pending_rows:
+        flush_pending()
+        if total_chunks <= 0:
             raise IndexingError("No chunkable content found")
 
-        texts = [p[2] for p in pending_rows]
-        effective = get_effective_settings(db)
-        vectors = embed(
-            texts,
-            model=str(effective.get("embedding_model") or ""),
-            dimensions=int(effective.get("embedding_dimensions") or get_settings().embedding_dimensions),
-            provider=str(effective.get("ai_provider") or ""),
-        )
-
-        if len(vectors) != len(pending_rows):
-            raise IndexingError("Embedding provider returned incomplete results")
-
-        for (conv, idx, piece), vector in zip(pending_rows, vectors, strict=True):
-            db.add(
-                ConversationChunk(
-                    id=uuid.uuid4(),
-                    conversation_id=conv.id,
-                    dataset_id=dataset.id,
-                    chunk_index=idx,
-                    content=piece,
-                    token_count=len(piece.split()),
-                    embedding=vector,
-                )
-            )
-
-        db.flush()
         dataset.status = DatasetStatus.READY
         dataset.error_message = None
         write_log(
@@ -173,8 +216,9 @@ def index_dataset(db: Session, dataset: Dataset) -> Dataset:
             message="Indexing completed",
             context={
                 "dataset_id": str(dataset.id),
-                "chunks": len(pending_rows),
-                "conversations": len(conversations),
+                "chunks": total_chunks,
+                "conversations_indexed": len(conversations),
+                "conversation_limit": conversation_limit,
             },
         )
         db.commit()
@@ -268,7 +312,6 @@ def retrieve_similar(
         provider=str(effective.get("ai_provider") or ""),
     )[0]
 
-    # Cosine distance via pgvector <=> operator
     distance = ConversationChunk.embedding.cosine_distance(query_vec)
     stmt = (
         select(ConversationChunk, Conversation, distance.label("distance"))

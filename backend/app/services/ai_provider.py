@@ -1,4 +1,4 @@
-"""OpenAI-compatible AI provider (embeddings + chat)."""
+"""OpenAI-compatible AI provider (embeddings + chat) with optional free local embeddings."""
 
 from __future__ import annotations
 
@@ -28,12 +28,20 @@ DEFAULT_EMBEDDING_MODELS = {
     "gemini": "text-embedding-004",
 }
 
+_local_model = None
+
 
 class AIProviderError(Exception):
     def __init__(self, message: str, *, status_code: int | None = None):
         super().__init__(message)
         self.message = message
         self.status_code = status_code
+
+
+def embedding_uses_remote_api(*, provider: str | None = None) -> bool:
+    settings = get_settings()
+    mode = (provider or settings.embedding_provider or "remote").strip().lower()
+    return mode not in {"local", "fastembed", "offline"}
 
 
 def resolve_base_url(*, provider: str | None = None, base_url: str | None = None) -> str:
@@ -52,9 +60,13 @@ def resolve_base_url(*, provider: str | None = None, base_url: str | None = None
 
 
 def resolve_embedding_model(*, model: str | None = None, provider: str | None = None) -> str:
+    settings = get_settings()
+    if not embedding_uses_remote_api():
+        return (model or settings.local_embedding_model or "").strip() or (
+            "sentence-transformers/all-MiniLM-L6-v2"
+        )
     if model and model.strip():
         return model.strip()
-    settings = get_settings()
     if settings.embedding_model.strip():
         return settings.embedding_model.strip()
     resolved_provider = (provider or settings.ai_provider).strip().lower()
@@ -78,6 +90,52 @@ def _headers(*, provider: str | None = None) -> dict[str, str]:
     return headers
 
 
+def _pad_or_trim(vector: list[float], expected_dim: int) -> list[float]:
+    if len(vector) == expected_dim:
+        return vector
+    if len(vector) > expected_dim:
+        return vector[:expected_dim]
+    return vector + [0.0] * (expected_dim - len(vector))
+
+
+def _get_local_model():
+    global _local_model
+    if _local_model is not None:
+        return _local_model
+    try:
+        from fastembed import TextEmbedding
+    except ImportError as exc:
+        raise AIProviderError(
+            "Local embeddings require fastembed. Run: pip install fastembed"
+        ) from exc
+    settings = get_settings()
+    name = settings.local_embedding_model.strip() or (
+        "sentence-transformers/all-MiniLM-L6-v2"
+    )
+    logger.info("Loading local embedding model %s (first run may download)", name)
+    _local_model = TextEmbedding(model_name=name)
+    return _local_model
+
+
+def _embed_local(texts: list[str], *, expected_dim: int, batch_size: int) -> list[list[float]]:
+    model = _get_local_model()
+    all_vectors: list[list[float]] = []
+    for start in range(0, len(texts), batch_size):
+        batch = texts[start : start + batch_size]
+        try:
+            raw = list(model.embed(batch))
+        except Exception as exc:  # noqa: BLE001
+            raise AIProviderError(f"Local embedding failed: {exc}") from exc
+        if len(raw) != len(batch):
+            raise AIProviderError(
+                f"Local embedding count mismatch: expected {len(batch)}, got {len(raw)}"
+            )
+        for item in raw:
+            vec = [float(v) for v in item]
+            all_vectors.append(_pad_or_trim(vec, expected_dim))
+    return all_vectors
+
+
 def embed(
     texts: list[str],
     *,
@@ -86,12 +144,17 @@ def embed(
     dimensions: int | None = None,
     provider: str | None = None,
 ) -> list[list[float]]:
-    """Return embeddings for texts using an OpenAI-compatible /embeddings API."""
+    """Return embeddings for texts (remote API or free local ONNX)."""
     if not texts:
         return []
 
     settings = get_settings()
     expected_dim = dimensions if dimensions is not None else settings.embedding_dimensions
+
+    if not embedding_uses_remote_api():
+        # Local MiniLM is 384-d; pad to schema dim (1536) — cosine stays consistent.
+        return _embed_local(texts, expected_dim=expected_dim, batch_size=max(8, batch_size))
+
     resolved_model = resolve_embedding_model(model=model, provider=provider)
     url = f"{resolve_base_url(provider=provider)}/embeddings"
     headers = _headers(provider=provider)
@@ -101,7 +164,6 @@ def embed(
     for start in range(0, len(texts), batch_size):
         batch = texts[start : start + batch_size]
         payload: dict[str, Any] = {"model": resolved_model, "input": batch}
-        # OpenAI supports dimensions for text-embedding-3-*
         if "text-embedding-3" in resolved_model or resolved_model.endswith("embedding-3-small"):
             payload["dimensions"] = expected_dim
 
@@ -110,7 +172,6 @@ def embed(
         if not isinstance(items, list):
             raise AIProviderError("Invalid embeddings response: missing data[]")
 
-        # API may return items out of order — sort by index
         items_sorted = sorted(items, key=lambda x: int(x.get("index", 0)))
         if len(items_sorted) != len(batch):
             raise AIProviderError(
