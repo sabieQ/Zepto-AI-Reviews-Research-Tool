@@ -117,8 +117,7 @@ export function DatasetsClient() {
             </h3>
             <p className="mt-1 text-sm text-zinc-600">
               <strong>Refresh</strong> pulls up to 100 newest reviews per store
-              into <code>Zepto Public Mentions</code>. For a one-time ~100k
-              backfill, run the CLI (see phase-7 user guide) — not this button.
+              into <code>Zepto Public Mentions</code>.
             </p>
           </div>
           <Button
