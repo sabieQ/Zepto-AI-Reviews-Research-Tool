@@ -14,7 +14,7 @@ const schema = z.object({
   ai_model: z.string().trim().min(1, "Model is required"),
   embedding_model: z.string().trim().min(1, "Embedding model is required"),
   embedding_dimensions: z.number().int().min(8).max(4096),
-  top_k: z.number().int().min(1).max(50),
+  top_k: z.number().int().min(1).max(100),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -170,9 +170,12 @@ export function SettingsClient() {
             </label>
             <input
               type="number"
+              min={1}
+              max={100}
               className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
               {...form.register("top_k", { valueAsNumber: true })}
             />
+            <p className="mt-1 text-xs text-zinc-500">Allowed range: 1–100</p>
           </div>
         </div>
 

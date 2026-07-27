@@ -79,7 +79,7 @@ Only `NEXT_PUBLIC_*` is bundled to the browser. API keys must **not** appear her
 |-------|--------|
 | Upload size | 10 MB |
 | Import rows | 5,000 |
-| `top_k` | 1–50 (default 12) |
+| `top_k` | 1–100 (default 12) |
 | Question length | 10–2000 characters |
 | History list | Latest 200 reports |
 
