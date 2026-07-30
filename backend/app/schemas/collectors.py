@@ -15,7 +15,7 @@ class CollectorRunRequest(BaseModel):
     limit: int | None = Field(default=None, ge=1, le=MAX_COLLECTOR_PER_STORE)
     country: str | None = Field(default=None, min_length=2, max_length=8)
     lang: str | None = Field(default=None, min_length=2, max_length=8)
-    auto_index: bool = True
+    auto_index: bool = False
 
 
 class CollectorBulkRequest(BaseModel):

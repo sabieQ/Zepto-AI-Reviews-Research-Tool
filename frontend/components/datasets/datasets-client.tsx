@@ -77,7 +77,7 @@ export function DatasetsClient() {
     mutationFn: async () => {
       const res = await runCollectorsRefresh({
         limit: 100,
-        auto_index: true,
+        auto_index: false,
       });
       if (!res.success) throw new Error(res.message);
       return res.data;
@@ -117,7 +117,8 @@ export function DatasetsClient() {
             </h3>
             <p className="mt-1 text-sm text-zinc-600">
               <strong>Refresh</strong> pulls up to 100 newest reviews per store
-              into <code>Zepto Public Mentions</code>.
+              into <code>Zepto Public Mentions</code> (no auto-reindex — use
+              Index / local CLI when you want new rows searchable).
             </p>
           </div>
           <Button
