@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import {
   deleteDataset,
   formatApiError,
-  listCollectorRuns,
   listDatasets,
   reindexDataset,
   runCollectorsRefresh,
@@ -23,7 +22,6 @@ export function DatasetsClient() {
     name: string;
   } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [collectMsg, setCollectMsg] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: ["datasets"],
@@ -36,15 +34,6 @@ export function DatasetsClient() {
       q.state.data?.some((d) => d.status === "indexing" || d.status === "processing")
         ? 3000
         : false,
-  });
-
-  const runs = useQuery({
-    queryKey: ["collector-runs"],
-    queryFn: async () => {
-      const res = await listCollectorRuns(5);
-      if (!res.success) throw new Error(res.message);
-      return res.data;
-    },
   });
 
   const remove = useMutation({
@@ -82,19 +71,11 @@ export function DatasetsClient() {
       if (!res.success) throw new Error(res.message);
       return res.data;
     },
-    onSuccess: async (data) => {
+    onSuccess: async () => {
       setActionError(null);
-      setCollectMsg(
-        `Refresh done: +${data.inserted} inserted, ${data.skipped} skipped` +
-          (data.dataset
-            ? ` → ${data.dataset.name} (${data.dataset.conversation_count} total, ${data.dataset.status})`
-            : ""),
-      );
       await queryClient.invalidateQueries({ queryKey: ["datasets"] });
-      await queryClient.invalidateQueries({ queryKey: ["collector-runs"] });
     },
     onError: (err) => {
-      setCollectMsg(null);
       setActionError(formatApiError(err));
     },
   });
@@ -131,27 +112,6 @@ export function DatasetsClient() {
               : "Refresh from stores"}
           </Button>
         </div>
-        {collectMsg ? (
-          <p className="mt-2 text-sm text-emerald-700">{collectMsg}</p>
-        ) : null}
-        {runs.isSuccess && runs.data.length > 0 ? (
-          <ul className="mt-3 space-y-1 text-xs text-zinc-600">
-            {runs.data.map((r) => (
-              <li key={r.id}>
-                {r.created_at
-                  ? new Date(r.created_at).toLocaleString()
-                  : "—"}{" "}
-                · {r.status} · +{r.inserted} / skip {r.skipped}
-                {r.context &&
-                typeof r.context === "object" &&
-                "mode" in r.context
-                  ? ` · ${String((r.context as { mode?: string }).mode ?? "refresh")}`
-                  : ""}
-                {r.error_message ? ` · ${r.error_message.slice(0, 80)}` : ""}
-              </li>
-            ))}
-          </ul>
-        ) : null}
       </section>
 
       <CreateDatasetForm />
