@@ -12,7 +12,6 @@ import {
   formatApiError,
   listDatasets,
   reindexDataset,
-  runCollectorsRefresh,
 } from "@/lib/api";
 
 export function DatasetsClient() {
@@ -62,24 +61,6 @@ export function DatasetsClient() {
     onError: (err) => setActionError(formatApiError(err)),
   });
 
-  const refreshStores = useMutation({
-    mutationFn: async () => {
-      const res = await runCollectorsRefresh({
-        limit: 100,
-        auto_index: false,
-      });
-      if (!res.success) throw new Error(res.message);
-      return res.data;
-    },
-    onSuccess: async () => {
-      setActionError(null);
-      await queryClient.invalidateQueries({ queryKey: ["datasets"] });
-    },
-    onError: (err) => {
-      setActionError(formatApiError(err));
-    },
-  });
-
   return (
     <div className="space-y-6">
       <header>
@@ -89,30 +70,6 @@ export function DatasetsClient() {
           search. Status <code>ready</code> means embeddings are built.
         </p>
       </header>
-
-      <section className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold text-zinc-900">
-              Store collectors
-            </h3>
-            <p className="mt-1 text-sm text-zinc-600">
-              <strong>Refresh</strong> pulls up to 100 newest reviews per store
-              into <code>Zepto Public Mentions</code> (no auto-reindex — use
-              Index / local CLI when you want new rows searchable).
-            </p>
-          </div>
-          <Button
-            type="button"
-            disabled={refreshStores.isPending}
-            onClick={() => refreshStores.mutate()}
-          >
-            {refreshStores.isPending
-              ? "Refreshing from stores…"
-              : "Refresh from stores"}
-          </Button>
-        </div>
-      </section>
 
       <CreateDatasetForm />
 
@@ -131,8 +88,7 @@ export function DatasetsClient() {
         <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-4 py-10 text-center">
           <p className="text-sm font-medium text-zinc-800">No datasets yet</p>
           <p className="mt-1 text-sm text-zinc-500">
-            Create a dataset above, import a CSV, or click{" "}
-            <strong>Refresh from stores</strong>.
+            Create a dataset above, then import a CSV or JSON file.
           </p>
         </div>
       ) : null}
